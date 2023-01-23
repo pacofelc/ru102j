@@ -8,6 +8,9 @@ import redis.clients.jedis.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static com.redislabs.university.RU102J.dao.RedisSchema.getCapacityRankingKey;
+import static com.redislabs.university.RU102J.dao.RedisSchema.getSiteGeoKey;
+
 public class SiteGeoDaoRedisImpl implements SiteGeoDao {
     private JedisPool jedisPool;
     final static private Double capacityThreshold = 0.2;
@@ -31,14 +34,26 @@ public class SiteGeoDaoRedisImpl implements SiteGeoDao {
     @Override
     public Set<Site> findAll() {
         try (Jedis jedis = jedisPool.getResource()) {
-            Set<String> keys = jedis.zrange(RedisSchema.getSiteGeoKey(), 0, -1);
+            Set<String> keys = jedis.zrange(getSiteGeoKey(), 0, -1);
             Set<Site> sites = new HashSet<>(keys.size());
+
+            // VERSIÓN MEJORADA CON PIPELINE
+            // EJEMPLO PARA GUARDAR RESPUESTAS EN UN ARRAY Y LUEGO RECUPERAR LOS VALORES
+            // Optional: Bonus Challenge
+            Pipeline pipe = jedis.pipelined();
+            List<Response<Map<String, String>>> responses = new ArrayList<>();
             for (String key : keys) {
-                Map<String, String> site = jedis.hgetAll(key);
+                responses.add( pipe.hgetAll(key));
+            }
+            pipe.sync();
+
+            for (Response<Map<String, String>> resp : responses) {
+                Map<String, String> site = resp.get();
                 if (!site.isEmpty()) {
                     sites.add(new Site(site));
                 }
             }
+
             return sites;
         }
     }
@@ -53,42 +68,49 @@ public class SiteGeoDaoRedisImpl implements SiteGeoDao {
     }
 
     // Challenge #5
-     private Set<Site> findSitesByGeoWithCapacity(GeoQuery query) {
-         return Collections.emptySet();
-     }
+//     private Set<Site> findSitesByGeoWithCapacity(GeoQuery query) {
+//         return Collections.emptySet();
+//     }
     // Comment out the above, and uncomment what's below
-//    private Set<Site> findSitesByGeoWithCapacity(GeoQuery query) {
-//        Set<Site> results = new HashSet<>();
-//        Coordinate coord = query.getCoordinate();
-//        Double radius = query.getRadius();
-//        GeoUnit radiusUnit = query.getRadiusUnit();
-//
-//         try (Jedis jedis = jedisPool.getResource()) {
-//             // START Challenge #5
-//             // TODO: Challenge #5: Get the sites matching the geo query, store them
-//             // in List<GeoRadiusResponse> radiusResponses;
-//             // END Challenge #5
-//
-//             Set<Site> sites = radiusResponses.stream()
-//                     .map(response -> jedis.hgetAll(response.getMemberByString()))
-//                     .filter(Objects::nonNull)
-//                     .map(Site::new).collect(Collectors.toSet());
-//
-//             // START Challenge #5
-//             Pipeline pipeline = jedis.pipelined();
-//             Map<Long, Response<Double>> scores = new HashMap<>(sites.size());
-//             // TODO: Challenge #5: Add the code that populates the scores HashMap...
-//             // END Challenge #5
-//
-//             for (Site site : sites) {
-//                 if (scores.get(site.getId()).get() >= capacityThreshold) {
-//                     results.add(site);
-//                 }
-//             }
-//         }
-//
-//         return results;
-//    }
+    private Set<Site> findSitesByGeoWithCapacity(GeoQuery query) {
+        Set<Site> results = new HashSet<>();
+        Coordinate coord = query.getCoordinate();
+        Double radius = query.getRadius();
+        GeoUnit radiusUnit = query.getRadiusUnit();
+
+         try (Jedis jedis = jedisPool.getResource()) {
+             // START Challenge #5
+             // TODO: Challenge #5: Get the sites matching the geo query, store them
+             // in List<GeoRadiusResponse> radiusResponses;
+             // END Challenge #5
+             List<GeoRadiusResponse> radiusResponses = jedis.georadius(getSiteGeoKey(),
+                     coord.lng,coord.lat,radius,radiusUnit);
+
+             Set<Site> sites = radiusResponses.stream()
+                     .map(response -> jedis.hgetAll(response.getMemberByString()))
+                     .filter(Objects::nonNull)
+                     .map(Site::new).collect(Collectors.toSet());
+
+             // START Challenge #5
+             Pipeline pipeline = jedis.pipelined();
+             Map<Long, Response<Double>> scores = new HashMap<>(sites.size());
+             // TODO: Challenge #5: Add the code that populates the scores HashMap...
+             for (Site site : sites) {
+                 scores.put(site.getId(),
+                         pipeline.zscore(RedisSchema.getCapacityRankingKey(),String.valueOf(site.getId())));
+             }
+             pipeline.sync();
+             // END Challenge #5
+
+             for (Site site : sites) {
+                 if (scores.get(site.getId()).get() >= capacityThreshold) {
+                     results.add(site);
+                 }
+             }
+         }
+
+         return results;
+    }
 
     private Set<Site> findSitesByGeo(GeoQuery query) {
         Coordinate coord = query.getCoordinate();
@@ -97,7 +119,7 @@ public class SiteGeoDaoRedisImpl implements SiteGeoDao {
 
         try (Jedis jedis = jedisPool.getResource()) {
             List<GeoRadiusResponse> radiusResponses =
-                    jedis.georadius(RedisSchema.getSiteGeoKey(), coord.getLng(),
+                    jedis.georadius(getSiteGeoKey(), coord.getLng(),
                             coord.getLat(), radius, radiusUnit);
 
             return radiusResponses.stream()
@@ -119,7 +141,7 @@ public class SiteGeoDaoRedisImpl implements SiteGeoDao {
              }
              Double longitude = site.getCoordinate().getGeoCoordinate().getLongitude();
              Double latitude = site.getCoordinate().getGeoCoordinate().getLatitude();
-             jedis.geoadd(RedisSchema.getSiteGeoKey(), longitude, latitude,
+             jedis.geoadd(getSiteGeoKey(), longitude, latitude,
                      key);
          }
     }
