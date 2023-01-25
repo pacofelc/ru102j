@@ -122,3 +122,10 @@ Subscribe to our YouTube Channel / Follow us on Twitch
 ---
 
 We'd love for you to [check out our YouTube channel](https://youtube.com/redisinc), and subscribe if you want to see more Redis videos!  We also stream regularly on our [Twitch.tv channel](https://www.twitch.tv/redisinc) - follow us to be notified when we're live or check out our [streaming schedule](https://developer.redis.com/redis-live).
+
+## HISTORIA  
+Para ejecutar instalé WSL2 y dentro un servidor de Redis.  
+Que hay que arrancar antes de ejecutar el proyecto.  
+También instalé Redisinsight v2.16.0 como cliente editor de Redis.  
+
+
