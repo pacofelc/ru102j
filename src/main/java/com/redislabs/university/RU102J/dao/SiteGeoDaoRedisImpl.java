@@ -84,7 +84,7 @@ public class SiteGeoDaoRedisImpl implements SiteGeoDao {
              // in List<GeoRadiusResponse> radiusResponses;
              // END Challenge #5
              List<GeoRadiusResponse> radiusResponses = jedis.georadius(getSiteGeoKey(),
-                     coord.lng,coord.lat,radius,radiusUnit);
+                     coord.getLng(),coord.getLat(),radius,radiusUnit);
 
              Set<Site> sites = radiusResponses.stream()
                      .map(response -> jedis.hgetAll(response.getMemberByString()))
@@ -96,8 +96,9 @@ public class SiteGeoDaoRedisImpl implements SiteGeoDao {
              Map<Long, Response<Double>> scores = new HashMap<>(sites.size());
              // TODO: Challenge #5: Add the code that populates the scores HashMap...
              for (Site site : sites) {
-                 scores.put(site.getId(),
-                         pipeline.zscore(RedisSchema.getCapacityRankingKey(),String.valueOf(site.getId())));
+                 Response<Double> score = pipeline.zscore(RedisSchema.getCapacityRankingKey(),
+                         String.valueOf(site.getId()));
+                 scores.put(site.getId(), score);
              }
              pipeline.sync();
              // END Challenge #5
